@@ -1,2 +1,2 @@
-# DDPM
-DDPM demo
+# VQVAE-Diffusion
+VQVAE-Diffusion demo
