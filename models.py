@@ -4,8 +4,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from einops import repeat
-from einops.layers.torch import Rearrange
+from einops import rearrange
 
 from vector_quantize_pytorch import ResidualVQ
 import modules
@@ -20,13 +19,15 @@ class RQVAE(nn.Module):
         img_size=64,
         **kwargs
     ):
-        modules = []
+        super().__init__()
+        
+        modules_list = []
         if hidden_dims is None:
             hidden_dims = [128, 256]
 
         # Build Encoder
         for h_dim in hidden_dims:
-            modules.append(
+            modules_list.append(
                 nn.Sequential(
                     nn.Conv2d(in_channels, out_channels=h_dim, kernel_size=4, stride=2, padding=1),
                     nn.LeakyReLU()
@@ -34,7 +35,7 @@ class RQVAE(nn.Module):
             )
             in_channels = h_dim
 
-        modules.append(
+        modules_list.append(
             nn.Sequential(
                 nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1),
                 nn.LeakyReLU()
@@ -42,17 +43,17 @@ class RQVAE(nn.Module):
         )
 
         for _ in range(6):
-            modules.append(modules.ResidualLayer(in_channels, in_channels))
-        modules.append(nn.LeakyReLU())
+            modules_list.append(modules.ResidualLayer(in_channels, in_channels))
+        modules_list.append(nn.LeakyReLU())
 
-        modules.append(
+        modules_list.append(
             nn.Sequential(
                 nn.Conv2d(in_channels, embedding_dim, kernel_size=1, stride=1),
                 nn.LeakyReLU()
             )
         )
 
-        self.encoder = nn.Sequential(*modules)
+        self.encoder = nn.Sequential(*modules_list)
 
         self.vq_layer = ResidualVQ(
                             dim=embedding_dim,
@@ -61,8 +62,8 @@ class RQVAE(nn.Module):
                         )
 
         # Build Decoder
-        modules = []
-        modules.append(
+        modules_list = []
+        modules_list.append(
             nn.Sequential(
                 nn.Conv2d(embedding_dim, hidden_dims[-1], kernel_size=3, stride=1, padding=1),
                 nn.LeakyReLU()
@@ -70,21 +71,21 @@ class RQVAE(nn.Module):
         )
 
         for _ in range(6):
-            modules.append(ResidualLayer(hidden_dims[-1], hidden_dims[-1]))
+            modules_list.append(modules.ResidualLayer(hidden_dims[-1], hidden_dims[-1]))
 
-        modules.append(nn.LeakyReLU())
+        modules_list.append(nn.LeakyReLU())
 
         hidden_dims.reverse()
 
         for i in range(len(hidden_dims) - 1):
-            modules.append(
+            modules_list.append(
                 nn.Sequential(
                     nn.ConvTranspose2d(hidden_dims[i], hidden_dims[i + 1], kernel_size=4, stride=2, padding=1),
                     nn.LeakyReLU()
                 )
             )
 
-        modules.append(
+        modules_list.append(
             nn.Sequential(
                 nn.ConvTranspose2d(hidden_dims[-1], out_channels=1, kernel_size=4, stride=2, padding=1),
                 nn.Tanh(),
@@ -92,7 +93,7 @@ class RQVAE(nn.Module):
             )
         )
 
-        self.decoder = nn.Sequential(*modules)
+        self.decoder = nn.Sequential(*modules_list)
         
     def forward(self, x):
         encoding = self.encoder(x)
@@ -103,11 +104,11 @@ class RQVAE(nn.Module):
         return [self.decoder(quantized_inputs), x, commit_loss]
     
     def loss_function(self, recons_x, x, commit_loss):
-        recons_loss = F.mse_loss(recons, input)
-        loss = recons_loss + vq_loss.sum()
+        recons_loss = F.mse_loss(recons_x, x)
+        loss = recons_loss + commit_loss.sum()
         return {'loss': loss,
                 'Reconstruction_Loss': recons_loss,
-                'VQ_Loss':vq_loss}
+                'VQ_Loss': commit_loss}
     
     @torch.no_grad()
     def reconstruct(self, x):
