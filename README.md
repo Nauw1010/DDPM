@@ -1,2 +1,2 @@
-# VQVAE-Diffusion
-VQVAE-Diffusion demo
+# RQVAE-Diffusion
+RQVAE-Diffusion demo
